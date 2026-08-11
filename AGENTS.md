@@ -41,8 +41,22 @@ make a failure go away — find out why it got slow.
 - Distributed jobs need their own watchdog — a hung rank never exits on its own. Set
   the collective/init timeout inside the job well below the outer limit so it dies
   with a rank id instead of stalling silently.
-- Before any GPU measurement, confirm the device is idle. Waiting is cheaper than a
-  contended number, and contention looks exactly like a regression.
+
+### Shared GPUs
+
+- Check occupancy before every launch (running compute processes and used memory). If
+  someone else's job is on the device, wait for it to go idle or move to a genuinely
+  free one. Never squeeze in alongside it, and never kill or preempt it.
+- If the wait is long, say so and ask — do not run anyway to save time.
+- A measurement that shared the device is void. Check occupancy before *and* after a
+  run (and periodically during a long sweep); if any foreign process appeared,
+  discard the numbers, do not log or report them, and re-measure on an idle device.
+- Baseline and candidate must be measured on the same device under the same idle
+  conditions. A contended run compared against an idle baseline is not a comparison.
+- Device-unavailable or unexpected-OOM errors on a shared box are usually contention,
+  not a regression — check occupancy before debugging the code. Under
+  exclusive-process mode, a context that is still releasing also counts as busy, so
+  back-to-back runs of your own can collide too.
 
 ### Design and code style
 
@@ -150,8 +164,8 @@ Write down: instruction mix per unit of work, memory access pattern (layout, str
 bank-conflict risk), pipeline structure (stages, page size, producer/consumer warp
 split), tunable parameters, and resulting occupancy. Summarize to the user.
 
-**Phase 2 — Baseline.** Confirm the device is idle before measuring — contention is
-indistinguishable from regression. Then: a benchmark script (warmup + N iterations,
+**Phase 2 — Baseline.** Confirm the device is idle first (see *Shared GPUs*) — every
+number below is void otherwise. Then: a benchmark script (warmup + N iterations,
 report min/P10/median/P90), a correctness check against golden over every supported
 config, a profiler sweep across the full config matrix, and a resource-usage dump
 (registers, spills, shared memory). Record constraints, baseline config, and baseline
