@@ -230,3 +230,58 @@ prerequisite as a compile-time condition, and fall back safely when it does not 
 **Session close:** every attempt logged (accepted and rejected); clean build; all
 correctness configs passing; a final measurement on an idle device; independent
 review of shared-template changes with any latent bug fixed; regression suite green.
+
+### 2.4 Writing kernels in TileLang
+
+**Baseline first.** If any implementation of this kernel exists — reference library,
+paper artifact, competing framework — find it, build it, and run it before writing a
+line of your own. Reproduce its reported numbers on your own hardware and state the
+gap if there is one. A number you cannot reproduce is not a target, and failing to
+reproduce it is itself the first thing to investigate (wrong shapes, wrong clocks,
+different tolerance, different timing method). Without a running baseline you have no
+way to know whether "fast" means anything.
+
+**Build the harness before the kernel.** One benchmark and correctness suite, driving
+baseline and new kernel through the same entry point: same shape/dtype/config matrix,
+same warmup and timing method, same golden and tolerance. It is the instrument for
+the whole project, so it is worth writing properly once. Report wall time, not derived
+bandwidth — GB/s counts padding and redundant traffic as useful work, so it can rank
+a slower layout first.
+
+**Then write the kernel in four stages, in this order.** Do not blur them; each has
+its own failure mode, and debugging two at once costs more than doing them in
+sequence. Keep them as separate commits so a later regression bisects to a
+known-correct point.
+
+1. *Express* — state the algorithm in the high-level API: tiling, pipeline, layouts,
+   data movement. Performance is not a concern yet. If something cannot be said at
+   all, that is an API gap to name, not a reason to hand-write the whole kernel.
+2. *Compile* — make it lower and build. Errors at this stage are usually layout or
+   scope mismatches and they carry information about the gap; read them before
+   working around them.
+3. *Correct* — golden comparison over the full matrix, including the edges: size 1,
+   non-multiples of the tile, the maximum supported shape. Correct on one shape is a
+   coincidence.
+4. *Fast* — only now tune, using the loop in §2.3.
+
+**Stay in the high-level API.** Reach for it first; if it cannot express what the
+kernel needs, prefer extending its semantics over bypassing it. When extending: do
+not fit the case in front of you. Derive the rule from what actually determines it —
+the dtype, the layout algebra, the hardware's atom — not from the one shape being
+tested. A special case added for today's kernel becomes tomorrow's silent wrong
+answer for a config nobody ran. An extension that is hard to state cleanly usually
+means the abstraction is being fought rather than extended; find the formulation that
+falls out of the existing model.
+
+Before analyzing or extending compiler internals, sync upstream. The region you are
+about to reason about may have been rewritten since your checkout, and an analysis of
+a stale version is wasted from the start.
+
+**Escape hatches are debt with an owner.** `call_intrin`, `call_extern`, inline asm,
+and hand-written templates are legitimate for getting through *express → compile →
+correct* — use them to unblock, not to settle. Each one gets a note saying what
+semantics it stands in for and why the high-level path could not carry it. Once the
+kernel is correct and fast, absorb that capability back into the compiler so the next
+kernel gets it for free. The end state should retain an escape hatch only where the
+compiler genuinely cannot own the semantics — and that judgement is stated, not
+assumed.
