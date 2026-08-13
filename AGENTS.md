@@ -250,8 +250,9 @@ a slower layout first.
 
 **Then write the kernel in four stages, in this order.** Do not blur them; each has
 its own failure mode, and debugging two at once costs more than doing them in
-sequence. Keep them as separate commits so a later regression bisects to a
-known-correct point.
+sequence. Nothing gets committed before stage 3 passes: a kernel that merely compiles
+poisons bisection and invites review of code that is about to change. The first commit
+is the correct kernel; from there each accepted tuning step commits on top of it.
 
 1. *Express* — state the algorithm in the high-level API: tiling, pipeline, layouts,
    data movement. Performance is not a concern yet. If something cannot be said at
